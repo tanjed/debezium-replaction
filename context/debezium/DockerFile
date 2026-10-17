@@ -1,7 +1,35 @@
-FROM debezium/connect:2.4
+# ==========================================
+# Stage 1: Build the plugin from source
+# ==========================================
+FROM debezium/connect:2.4 AS builder
 USER root
-RUN microdnf -y install unzip \
-    && curl -O https://github.com/ClickHouse/clickhouse-kafka-connect/releases/download/v1.0.113/clickhouse-kafka-connect-v1.0.113.zip \
-    && unzip clickhouse-kafka-connect-v1.0.113.zip -d /kafka/connect/clickhouse-sink \
-    && rm clickhouse-kafka-connect-v1.0.113.zip
+
+# Install build dependencies (JDK, Git, Unzip)
+RUN microdnf -y install git unzip java-17-openjdk-devel
+
+# Clone the ClickHouse sink repository
+WORKDIR /build
+RUN git clone --depth 1 --branch main https://github.com/ClickHouse/clickhouse-kafka-connect.git
+
+# Compile the code and build the zip archive
+WORKDIR /build/clickhouse-kafka-connect
+RUN chmod +x gradlew \
+    && ./gradlew --no-daemon createConfluentArchive
+
+# Extract the generated zip into a clean staging directory
+RUN mkdir -p /export/clickhouse-sink \
+    && archive_path="$(find /build/clickhouse-kafka-connect/build/confluent -name '*.zip' -print -quit)" \
+    && unzip "${archive_path}" -d /export/clickhouse-sink
+
+# ==========================================
+# Stage 2: Create the final lightweight image
+# ==========================================
+FROM debezium/connect:2.4
+
+
+# Copy ONLY the extracted plugin files from the builder stage
+# The --chown flag ensures the 'kafka' user has the correct permissions
+COPY --from=builder --chown=kafka:kafka /export/clickhouse-sink /kafka/connect/clickhouse-sink
+
+# Ensure the container runs as the non-root kafka user
 USER kafka

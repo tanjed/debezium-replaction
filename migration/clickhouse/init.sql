@@ -6,20 +6,20 @@ CREATE TABLE IF NOT EXISTS destination_db.customers (
     email String,
     created_at DateTime64(3),
     updated_at DateTime64(3),
-    __deleted String DEFAULT 'false'
+    __version    Int64
 )
-ENGINE = ReplacingMergeTree(updated_at)
-ORDER BY id;
+ENGINE = ReplacingMergeTree(__version)
+ORDER BY email;
 
 CREATE TABLE IF NOT EXISTS destination_db.orders (
     id Int64,
     customer_id Int64,
     order_number String,
-    amount Decimal(12, 2),
-    status String,
-    created_at DateTime64(3),
-    updated_at DateTime64(3),
-    __deleted String DEFAULT 'false'
+    amount       Decimal(12, 2),
+    status       String,
+    created_at   DateTime64(3),
+    updated_at   DateTime64(3),
+    __version      Int64
 )
-ENGINE = ReplacingMergeTree(updated_at)
-ORDER BY id;
+ENGINE = ReplacingMergeTree(__version)
+ORDER BY customer_id;

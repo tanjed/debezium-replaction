@@ -2,6 +2,7 @@
     "name": "postgres-inventory-connector",
     "config": {
         "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "snapshot.mode": "always",
         "database.hostname": "${env:POSTGRES_HOST}",
         "database.port": "${env:POSTGRES_PORT}",
         "database.user": "${env:POSTGRES_USER}",
