@@ -4,6 +4,7 @@ networks:
 
 volumes:
   postgres_data: {}
+  postgres_consumer_data: {}
   redis_data: {}
   clickhouse_data: {}
   kafka_data: {}
@@ -53,6 +54,51 @@ services:
       while ! pg_isready -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER}; do sleep 3; done;
       echo 'PostgreSQL is up! Executing schema migration...' &&
       psql -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB} -f /init.sql
+      "
+
+  # ==============================
+  # Consumer PostgreSQL
+  # ==============================
+  postgres-consumer:
+    image: postgres:15
+    container_name: postgres-consumer
+    ports:
+      - "${CONSUMER_POSTGRES_EXTERNAL_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${CONSUMER_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${CONSUMER_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${CONSUMER_POSTGRES_DB}
+    volumes:
+      - postgres_consumer_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CONSUMER_POSTGRES_USER} -d ${CONSUMER_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - data-network
+
+  # ==============================
+  # Consumer PostgreSQL Migration Hook
+  # ==============================
+  postgres-consumer-migration:
+    image: postgres:15
+    container_name: postgres-consumer-migration
+    depends_on:
+      postgres-consumer:
+        condition: service_healthy
+    networks:
+      - data-network
+    volumes:
+      - "./migration/postgres-consumer/init.sql:/init.sql"
+    environment:
+      PGPASSWORD: ${CONSUMER_POSTGRES_PASSWORD}
+    command: >
+      sh -c "
+      echo 'Waiting for consumer PostgreSQL to be ready...' &&
+      while ! pg_isready -h ${CONSUMER_POSTGRES_HOST} -p ${CONSUMER_POSTGRES_PORT} -U ${CONSUMER_POSTGRES_USER}; do sleep 3; done;
+      echo 'Consumer PostgreSQL is up! Executing schema migration...' &&
+      psql -h ${CONSUMER_POSTGRES_HOST} -p ${CONSUMER_POSTGRES_PORT} -U ${CONSUMER_POSTGRES_USER} -d ${CONSUMER_POSTGRES_DB} -f /init.sql
       "
   # ==============================
   # Redis
@@ -226,6 +272,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      CONSUMER_POSTGRES_HOST: ${CONSUMER_POSTGRES_HOST}
+      CONSUMER_POSTGRES_PORT: ${CONSUMER_POSTGRES_PORT}
+      CONSUMER_POSTGRES_USER: ${CONSUMER_POSTGRES_USER}
+      CONSUMER_POSTGRES_PASSWORD: ${CONSUMER_POSTGRES_PASSWORD}
+      CONSUMER_POSTGRES_DB: ${CONSUMER_POSTGRES_DB}
       CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
       CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
@@ -248,6 +299,8 @@ services:
         condition: service_started
       postgres-migration:
         condition: service_completed_successfully
+      postgres-consumer-migration:
+        condition: service_completed_successfully
       clickhouse-migration:
         condition: service_completed_successfully
     volumes:
@@ -266,6 +319,10 @@ services:
         echo 'Debezium is up! Upserting clickhouse-sink...'
         jq '.config' /config/clickhouse-sink.json > /tmp/sink-config.json
         curl -i -X PUT http://${DEBEZIUM_HOST}:${DEBEZIUM_PORT}/connectors/clickhouse-sink/config -H 'Content-Type: application/json' -d @/tmp/sink-config.json
+
+        echo 'Debezium is up! Upserting postgres-consumer-sink...'
+        jq '.config' /config/postgres-consumer-sink.json > /tmp/postgres-consumer-sink-config.json
+        curl -i -X PUT http://${DEBEZIUM_HOST}:${DEBEZIUM_PORT}/connectors/postgres-consumer-sink/config -H 'Content-Type: application/json' -d @/tmp/postgres-consumer-sink-config.json
           
         echo 'Upserting postgres source connector (triggers snapshot)...'
         jq '.config' /config/postgres-connector.json > /tmp/pg-config.json

@@ -1,0 +1,25 @@
+{
+    "name": "postgres-consumer-sink",
+    "config": {
+        "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+        "tasks.max": "1",
+        "topics": "inventory.public.customers,inventory.public.orders",
+        "connection.url": "jdbc:postgresql://${env:CONSUMER_POSTGRES_HOST}:${env:CONSUMER_POSTGRES_PORT}/${env:CONSUMER_POSTGRES_DB}",
+        "connection.username": "${env:CONSUMER_POSTGRES_USER}",
+        "connection.password": "${env:CONSUMER_POSTGRES_PASSWORD}",
+        "insert.mode": "upsert",
+        "delete.enabled": "true",
+        "primary.key.mode": "record_key",
+        "primary.key.fields": "id",
+        "schema.evolution": "basic",
+        "table.name.format": "${topic}",
+        "transforms": "route",
+        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.route.regex": "inventory\\\\.public\\\\.(.*)",
+        "transforms.route.replacement": "$1",
+        "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "key.converter.schemas.enable": "true",
+        "value.converter.schemas.enable": "true"
+    }
+}
